@@ -34,11 +34,13 @@ type control struct {
 }
 
 const (
-	V4L2_CAP_VIDEO_CAPTURE      uint32 = 0x00000001
-	V4L2_CAP_STREAMING          uint32 = 0x04000000
-	V4L2_BUF_TYPE_VIDEO_CAPTURE uint32 = 1
-	V4L2_MEMORY_MMAP            uint32 = 1
-	V4L2_FIELD_ANY              uint32 = 0
+	V4L2_CAP_VIDEO_CAPTURE             uint32 = 0x00000001
+	V4L2_CAP_VIDEO_CAPTURE_MPLANE      uint32 = 0x00001000
+	V4L2_CAP_STREAMING                 uint32 = 0x04000000
+	V4L2_BUF_TYPE_VIDEO_CAPTURE        uint32 = 1
+	V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE uint32 = 9
+	V4L2_MEMORY_MMAP                   uint32 = 1
+	V4L2_FIELD_ANY                     uint32 = 0
 )
 
 const (
@@ -57,6 +59,10 @@ const (
 	V4L2_CID_BASE               uint32 = 0x00980900
 	V4L2_CID_AUTO_WHITE_BALANCE uint32 = V4L2_CID_BASE + 12
 	V4L2_CID_PRIVATE_BASE       uint32 = 0x08000000
+)
+
+const (
+	VIDEO_MAX_PLANES uint32 = 8
 )
 
 const (
@@ -192,6 +198,47 @@ type v4l2_pix_format struct {
 	Xfer_func    uint32
 }
 
+type v4l2_pix_format_mplane struct {
+	Width        uint32
+	Height       uint32
+	Pixelformat  uint32
+	Field        uint32
+	Colorspace   uint32
+	PlaneFmt     [VIDEO_MAX_PLANES]v4l2_plane_pix_format
+	NumPlanes    uint8
+	Flags        uint8
+	Ycbcr_enc    uint8
+	Quantization uint8
+	Xfer_func    uint8
+	Reserved     [7]uint8
+}
+
+type v4l2_plane_pix_format struct {
+	Sizeimage    uint32
+	Bytesperline uint32
+	Reserved     [6]uint16
+}
+
+func (format v4l2_format) pix_format() (v4l2_pix_format, error) {
+	pixFormat := v4l2_pix_format{}
+	if format._type != V4L2_BUF_TYPE_VIDEO_CAPTURE {
+		return pixFormat, errors.New("the type of the format is not V4L2_BUF_TYPE_VIDEO_CAPTURE and the payload of the format is not a v4l2_pix_format structure")
+	}
+	buf := bytes.NewBuffer(format.union.data[:])
+	err := binary.Read(buf, NativeByteOrder, &pixFormat)
+	return pixFormat, err
+}
+
+func (format v4l2_format) pix_format_mplane() (v4l2_pix_format_mplane, error) {
+	pixFormat := v4l2_pix_format_mplane{}
+	if format._type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE {
+		return pixFormat, errors.New("the type of the format is not V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE and the payload of the format is not a v4l2_pix_format_mplane structure")
+	}
+	buf := bytes.NewBuffer(format.union.data[:])
+	err := binary.Read(buf, NativeByteOrder, &pixFormat)
+	return pixFormat, err
+}
+
 type v4l2_requestbuffers struct {
 	count    uint32
 	_type    uint32
@@ -213,6 +260,25 @@ type v4l2_buffer struct {
 	length    uint32
 	reserved2 uint32
 	reserved  uint32
+}
+
+func (b *v4l2_buffer) initPlanes(numPlanes uint32) ([]v4l2_plane, error) {
+	// Initialize a planes array and write a pointer to it into the union.
+	b.length = numPlanes
+	planes := make([]v4l2_plane, numPlanes)
+	planesPointer := uintptr(unsafe.Pointer(&planes[0]))
+	buf := bytes.NewBuffer(b.union[:])
+	err := binary.Write(buf, NativeByteOrder, planesPointer)
+
+	return planes, err
+}
+
+type v4l2_plane struct {
+	bytesused  uint32
+	length     uint32
+	union      [unsafe.Sizeof(__p)]uint8
+	dataOffset uint32
+	reserved   [11]uint32
 }
 
 type v4l2_timecode struct {
@@ -262,7 +328,7 @@ type v4l2_streamparm struct {
 	union v4l2_streamparm_union
 }
 
-func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStreaming bool, err error) {
+func checkCapabilities(fd uintptr) (supportsVideoCaptureSinglePlane bool, supportsVideoCaptureMultiPlane bool, supportsVideoStreaming bool, err error) {
 
 	caps := &v4l2_capability{}
 
@@ -272,18 +338,23 @@ func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStre
 		return
 	}
 
-	supportsVideoCapture = (caps.capabilities & V4L2_CAP_VIDEO_CAPTURE) != 0
+	supportsVideoCaptureSinglePlane = (caps.capabilities & V4L2_CAP_VIDEO_CAPTURE) != 0
+	supportsVideoCaptureMultiPlane = (caps.capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE) != 0
 	supportsVideoStreaming = (caps.capabilities & V4L2_CAP_STREAMING) != 0
 	return
 
 }
 
-func getPixelFormat(fd uintptr, index uint32) (code uint32, description string, err error) {
+func getPixelFormat(fd uintptr, index uint32, mplane bool) (code uint32, description string, err error) {
 
 	fmtdesc := &v4l2_fmtdesc{}
 
 	fmtdesc.index = index
-	fmtdesc._type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+	if mplane {
+		fmtdesc._type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+	} else {
+		fmtdesc._type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+	}
 
 	err = ioctl.Ioctl(fd, VIDIOC_ENUM_FMT, uintptr(unsafe.Pointer(fmtdesc)))
 
@@ -414,24 +485,39 @@ func getBusInfo(fd uintptr) (string, error) {
 	return CToGoString(caps.bus_info[:]), nil
 }
 
-func setImageFormat(fd uintptr, formatcode *uint32, width *uint32, height *uint32) (err error) {
+func setImageFormat(fd uintptr, formatcode *uint32, width *uint32, height *uint32, multiPlane bool) (err error) {
 
-	format := &v4l2_format{
-		_type: V4L2_BUF_TYPE_VIDEO_CAPTURE,
-	}
-
-	pix := v4l2_pix_format{
-		Width:       *width,
-		Height:      *height,
-		Pixelformat: *formatcode,
-		Field:       V4L2_FIELD_ANY,
-	}
-
+	format := &v4l2_format{}
 	pixbytes := &bytes.Buffer{}
-	err = binary.Write(pixbytes, NativeByteOrder, pix)
 
-	if err != nil {
-		return
+	if multiPlane {
+		format._type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+		pix := v4l2_pix_format_mplane{
+			Width:       *width,
+			Height:      *height,
+			Pixelformat: *formatcode,
+			Field:       V4L2_FIELD_ANY,
+		}
+
+		err = binary.Write(pixbytes, NativeByteOrder, pix)
+
+		if err != nil {
+			return
+		}
+	} else {
+		format._type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+		pix := v4l2_pix_format{
+			Width:       *width,
+			Height:      *height,
+			Pixelformat: *formatcode,
+			Field:       V4L2_FIELD_ANY,
+		}
+
+		err = binary.Write(pixbytes, NativeByteOrder, pix)
+
+		if err != nil {
+			return
+		}
 	}
 
 	copy(format.union.data[:], pixbytes.Bytes())
@@ -442,26 +528,43 @@ func setImageFormat(fd uintptr, formatcode *uint32, width *uint32, height *uint3
 		return
 	}
 
-	pixReverse := &v4l2_pix_format{}
-	err = binary.Read(bytes.NewBuffer(format.union.data[:]), NativeByteOrder, pixReverse)
+	if multiPlane {
+		pixReverse := &v4l2_pix_format_mplane{}
+		err = binary.Read(bytes.NewBuffer(format.union.data[:]), NativeByteOrder, pixReverse)
 
-	if err != nil {
-		return
+		if err != nil {
+			return
+		}
+
+		*width = pixReverse.Width
+		*height = pixReverse.Height
+		*formatcode = pixReverse.Pixelformat
+	} else {
+		pixReverse := &v4l2_pix_format{}
+		err = binary.Read(bytes.NewBuffer(format.union.data[:]), NativeByteOrder, pixReverse)
+
+		if err != nil {
+			return
+		}
+
+		*width = pixReverse.Width
+		*height = pixReverse.Height
+		*formatcode = pixReverse.Pixelformat
 	}
-
-	*width = pixReverse.Width
-	*height = pixReverse.Height
-	*formatcode = pixReverse.Pixelformat
 
 	return
 
 }
 
-func mmapRequestBuffers(fd uintptr, buf_count *uint32) (err error) {
+func mmapRequestBuffers(fd uintptr, buf_count *uint32, multiPlane bool) (err error) {
 
 	req := &v4l2_requestbuffers{}
 	req.count = *buf_count
-	req._type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+	if multiPlane {
+		req._type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+	} else {
+		req._type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+	}
 	req.memory = V4L2_MEMORY_MMAP
 
 	err = ioctl.Ioctl(fd, VIDIOC_REQBUFS, uintptr(unsafe.Pointer(req)))
@@ -503,6 +606,45 @@ func mmapQueryBuffer(fd uintptr, index uint32, length *uint32) (buffer []byte, e
 	return
 }
 
+func mmapQueryBufferMultiPlane(fd uintptr, index uint32, numPlanes uint32) (buffers [][]byte, err error) {
+
+	req := &v4l2_buffer{}
+
+	req._type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+	req.memory = V4L2_MEMORY_MMAP
+	req.index = index
+	var planes []v4l2_plane
+	planes, err = req.initPlanes(numPlanes)
+	if err != nil {
+		return
+	}
+
+	err = ioctl.Ioctl(fd, VIDIOC_QUERYBUF, uintptr(unsafe.Pointer(req)))
+
+	if err != nil {
+		return
+	}
+
+	buffers = make([][]byte, req.length)
+	for i, plane := range planes {
+		var offset uint32
+		err = binary.Read(bytes.NewBuffer(plane.union[:]), NativeByteOrder, &offset)
+
+		if err != nil {
+			return
+		}
+
+		length := plane.length
+		buffers[i], err = unix.Mmap(int(fd), int64(offset), int(length), unix.PROT_READ, unix.MAP_SHARED)
+
+		if err != nil {
+			return
+		}
+	}
+
+	return
+}
+
 func mmapDequeueBuffer(fd uintptr, index *uint32, length *uint32) (err error) {
 
 	buffer := &v4l2_buffer{}
@@ -523,6 +665,35 @@ func mmapDequeueBuffer(fd uintptr, index *uint32, length *uint32) (err error) {
 
 }
 
+func mmapDequeueBufferMultiPlane(fd uintptr, index *uint32, numPlanes uint32) ([]uint32, error) {
+
+	buffer := &v4l2_buffer{}
+
+	buffer._type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+	buffer.memory = V4L2_MEMORY_MMAP
+	// Initialize an array that will hold the number of bytes used in each plane.
+	lengths := make([]uint32, numPlanes)
+
+	planes, err := buffer.initPlanes(numPlanes)
+	if err != nil {
+		return lengths, err
+	}
+
+	err = ioctl.Ioctl(fd, VIDIOC_DQBUF, uintptr(unsafe.Pointer(buffer)))
+
+	if err != nil {
+		return lengths, err
+	}
+
+	*index = buffer.index
+	for i, plane := range planes {
+		lengths[i] = plane.bytesused
+	}
+
+	return lengths, nil
+
+}
+
 func mmapEnqueueBuffer(fd uintptr, index uint32) (err error) {
 
 	buffer := &v4l2_buffer{}
@@ -536,22 +707,61 @@ func mmapEnqueueBuffer(fd uintptr, index uint32) (err error) {
 
 }
 
+func mmapEnqueueBufferMultiPlane(fd uintptr, index uint32, numPlanes uint32) ([]uint32, error) {
+
+	buffer := &v4l2_buffer{}
+
+	buffer._type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+	buffer.memory = V4L2_MEMORY_MMAP
+	buffer.index = index
+
+	// Initialize an array that will hold the number of bytes used in each plane.
+	lengths := make([]uint32, numPlanes)
+
+	planes, err := buffer.initPlanes(numPlanes)
+	if err != nil {
+		return lengths, err
+	}
+
+	err = ioctl.Ioctl(fd, VIDIOC_QBUF, uintptr(unsafe.Pointer(buffer)))
+
+	if err != nil {
+		return lengths, err
+	}
+
+	// The length are actually not actually useful, this is just added, to
+	// (hopefully) prevent the planes array from being garbage collected. The
+	// pointer to the planes array in the buffer has to be valid in the
+	// systemcall, so the planes array may not be garbage collected.
+	for i, plane := range planes {
+		lengths[i] = plane.length
+	}
+	return lengths, err
+
+}
+
 func mmapReleaseBuffer(buffer []byte) (err error) {
 	err = unix.Munmap(buffer)
 	return
 }
 
-func startStreaming(fd uintptr) (err error) {
+func startStreaming(fd uintptr, multiPlane bool) (err error) {
 
 	var uintPointer uint32 = V4L2_BUF_TYPE_VIDEO_CAPTURE
+	if multiPlane {
+		uintPointer = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+	}
 	err = ioctl.Ioctl(fd, VIDIOC_STREAMON, uintptr(unsafe.Pointer(&uintPointer)))
 	return
 
 }
 
-func stopStreaming(fd uintptr) (err error) {
+func stopStreaming(fd uintptr, multiPlane bool) (err error) {
 
 	var uintPointer uint32 = V4L2_BUF_TYPE_VIDEO_CAPTURE
+	if multiPlane {
+		uintPointer = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+	}
 	err = ioctl.Ioctl(fd, VIDIOC_STREAMOFF, uintptr(unsafe.Pointer(&uintPointer)))
 	return
 

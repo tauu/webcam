@@ -14,11 +14,16 @@ import (
 
 // Webcam object
 type Webcam struct {
-	fd        uintptr
-	bufcount  uint32
-	buffers   [][]byte
-	streaming bool
-	pollFds   []unix.PollFd
+	fd                 uintptr
+	bufcount           uint32
+	buffers            [][]byte
+	multiPlaneBuffers  [][][]byte
+	streaming          bool
+	pollFds            []unix.PollFd
+	singlePlaneCapture bool
+	multiPlaneCapture  bool
+	useMultiPlane      bool
+	numPlanes          uint32
 }
 
 type ControlID uint32
@@ -52,13 +57,13 @@ func Open(path string) (*Webcam, error) {
 	}()
 	fd := uintptr(handle)
 
-	supportsVideoCapture, supportsVideoStreaming, err := checkCapabilities(fd)
+	supportsVideoCaptureSinglePlane, supportsVideoCaptureMultiPlane, supportsVideoStreaming, err := checkCapabilities(fd)
 
 	if err != nil {
 		return nil, err
 	}
 
-	if !supportsVideoCapture {
+	if !supportsVideoCaptureSinglePlane && !supportsVideoCaptureMultiPlane {
 		return nil, errors.New("Not a video capture device")
 	}
 
@@ -68,8 +73,16 @@ func Open(path string) (*Webcam, error) {
 
 	w := new(Webcam)
 	w.fd = fd
+	w.singlePlaneCapture = supportsVideoCaptureSinglePlane
+	w.multiPlaneCapture = supportsVideoCaptureMultiPlane
 	w.bufcount = 256
 	w.pollFds = []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+	// Choose singe plane api by default if available.
+	if supportsVideoCaptureSinglePlane {
+		w.useMultiPlane = false
+	} else {
+		w.useMultiPlane = true
+	}
 	success = true
 	return w, nil
 }
@@ -88,14 +101,26 @@ func (w *Webcam) GetSupportedFormats() map[PixelFormat]string {
 	var desc string
 	var index uint32
 
-	for index = 0; err == nil; index++ {
-		code, desc, err = getPixelFormat(w.fd, index)
+	if !w.useMultiPlane {
+		for index = 0; err == nil; index++ {
+			code, desc, err = getPixelFormat(w.fd, index, false)
 
-		if err != nil {
-			break
+			if err != nil {
+				break
+			}
+
+			result[PixelFormat(code)] = desc
 		}
+	} else {
+		for index = 0; err == nil; index++ {
+			code, desc, err = getPixelFormat(w.fd, index, true)
 
-		result[PixelFormat(code)] = desc
+			if err != nil {
+				break
+			}
+
+			result[PixelFormat(code)] = desc
+		}
 	}
 
 	return result
@@ -171,7 +196,7 @@ func (w *Webcam) SetImageFormat(f PixelFormat, width, height uint32) (PixelForma
 	cw := width
 	ch := height
 
-	err := setImageFormat(w.fd, &code, &width, &height)
+	err := setImageFormat(w.fd, &code, &width, &height, w.useMultiPlane)
 
 	if err != nil {
 		return 0, 0, 0, err
@@ -188,6 +213,32 @@ func (w *Webcam) SetBufferCount(count uint32) error {
 	}
 	w.bufcount = count
 	return nil
+}
+
+// Switches between single plane and multi plane frame capturing.
+// Not allowed if streaming is already on.
+func (w *Webcam) UseMulitPlaneCapturing(use bool) error {
+	if w.streaming {
+		return errors.New("Cannot switch capture api when streaming")
+	}
+	if use && !w.multiPlaneCapture {
+		return errors.New("Device does not support multi plane capturing")
+	}
+	if !use && !w.singlePlaneCapture {
+		return errors.New("Device does not support single plane capturing")
+	}
+	w.useMultiPlane = use
+	return nil
+}
+
+// True if the device supports capturing frames in single plane formats.
+func (w *Webcam) CanCaptureSinglePlane() bool {
+	return w.singlePlaneCapture
+}
+
+// True if the device supports capturing frames in multi plane formats.
+func (w *Webcam) CanCaptureMultiPlane() bool {
+	return w.multiPlaneCapture
 }
 
 // Get a map of available controls.
@@ -231,36 +282,72 @@ func (w *Webcam) StartStreaming() error {
 		return errors.New("Already streaming")
 	}
 
-	err := mmapRequestBuffers(w.fd, &w.bufcount)
+	err := mmapRequestBuffers(w.fd, &w.bufcount, w.useMultiPlane)
 
 	if err != nil {
 		return errors.New("Failed to map request buffers: " + string(err.Error()))
 	}
 
-	w.buffers = make([][]byte, w.bufcount, w.bufcount)
-	for index, _ := range w.buffers {
-		var length uint32
-
-		buffer, err := mmapQueryBuffer(w.fd, uint32(index), &length)
-
-		if err != nil {
-			return errors.New("Failed to map memory: " + string(err.Error()))
-		}
-
-		w.buffers[index] = buffer
-	}
-
-	for index, _ := range w.buffers {
-
-		err := mmapEnqueueBuffer(w.fd, uint32(index))
+	if w.useMultiPlane {
+		// The number of planes of the current capture format is required
+		// for initializing the buffers.
+		format, err := getImageFormat(w.fd)
 
 		if err != nil {
-			return errors.New("Failed to enqueue buffer: " + string(err.Error()))
+			return errors.New("Failed to retrieve the current capture format: " + err.Error())
 		}
 
+		pixelFormat, err := format.pix_format_mplane()
+
+		if err != nil {
+			return errors.New("Failed to extract the pixel fromat form the capture format: " + err.Error())
+		}
+
+		w.multiPlaneBuffers = make([][][]byte, w.bufcount)
+		w.numPlanes = uint32(pixelFormat.NumPlanes)
+
+		for index, _ := range w.multiPlaneBuffers {
+			buffer, err := mmapQueryBufferMultiPlane(w.fd, uint32(index), w.numPlanes)
+
+			if err != nil {
+				return errors.New("Failed to map memory: " + string(err.Error()))
+			}
+
+			w.multiPlaneBuffers[index] = buffer
+		}
+
+		for index, _ := range w.multiPlaneBuffers {
+			_, err := mmapEnqueueBufferMultiPlane(w.fd, uint32(index), w.numPlanes)
+
+			if err != nil {
+				return errors.New("Failed to enqueue buffer: " + string(err.Error()))
+			}
+		}
+	} else {
+		w.buffers = make([][]byte, w.bufcount, w.bufcount)
+		for index, _ := range w.buffers {
+			var length uint32
+
+			buffer, err := mmapQueryBuffer(w.fd, uint32(index), &length)
+
+			if err != nil {
+				return errors.New("Failed to map memory: " + string(err.Error()))
+			}
+
+			w.buffers[index] = buffer
+		}
+
+		for index := uint32(0); index < w.bufcount; index++ {
+			err := mmapEnqueueBuffer(w.fd, index)
+
+			if err != nil {
+				return errors.New("Failed to enqueue buffer: " + string(err.Error()))
+			}
+
+		}
 	}
 
-	err = startStreaming(w.fd)
+	err = startStreaming(w.fd, w.useMultiPlane)
 
 	if err != nil {
 		return errors.New("Failed to start streaming: " + string(err.Error()))
@@ -299,9 +386,36 @@ func (w *Webcam) GetFrame() ([]byte, uint32, error) {
 
 }
 
+// Get a single multi pane frame from the webcam and return the frame and
+// the buffer index. To return the buffer, ReleaseFrame must be called.
+// If frame cannot be read at the moment
+// function will return empty slice
+func (w *Webcam) GetMultiPlaneFrame() ([][]byte, uint32, error) {
+	var index uint32
+
+	lengths, err := mmapDequeueBufferMultiPlane(w.fd, &index, w.numPlanes)
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	buffer := make([][]byte, w.numPlanes)
+	for i, length := range lengths {
+		buffer[i] = w.multiPlaneBuffers[int(index)][i][:int(length)]
+	}
+
+	return buffer, index, nil
+
+}
+
 // Release the frame buffer that was obtained via GetFrame
 func (w *Webcam) ReleaseFrame(index uint32) error {
-	return mmapEnqueueBuffer(w.fd, index)
+	if w.useMultiPlane {
+		_, err := mmapEnqueueBufferMultiPlane(w.fd, index, w.numPlanes)
+		return err
+	} else {
+		return mmapEnqueueBuffer(w.fd, index)
+	}
 }
 
 // Wait until frame could be read
@@ -329,8 +443,7 @@ func (w *Webcam) StopStreaming() error {
 			return err
 		}
 	}
-
-	return stopStreaming(w.fd)
+	return stopStreaming(w.fd, w.useMultiPlane)
 }
 
 // Close the device
