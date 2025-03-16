@@ -36,6 +36,38 @@ type Control struct {
 	Step int32
 }
 
+// An input of the webcam which can be used for capturing video.
+type Input struct {
+	input v4l2_input
+}
+
+// The index of the input, which is required to select it.
+func (i Input) Index() uint32 {
+	return i.input.Index
+}
+
+func (i Input) Name() string {
+	return CToGoString(i.input.Name[:])
+}
+
+func (i Input) IsCamera() bool {
+	return i.input.Type&V4L2_INPUT_TYPE_CAMERA != 0
+}
+
+func (i Input) NoPower() bool {
+	return i.input.Status&V4L2_IN_ST_NO_POWER != 0
+}
+
+func (i Input) NoSignal() bool {
+	return i.input.Status&V4L2_IN_ST_NO_SIGNAL != 0
+}
+
+// If true the input support digital video timings, which likely also means that
+// it does not support setting framesizes and capture rates.
+func (i Input) SupportsDigitalVideoTinings() bool {
+	return i.input.Capabilities&V4L2_IN_CAP_DV_TIMINGS != 0
+}
+
 // Open a webcam with a given path
 // Checks if device is a v4l2 device and if it is
 // capable to stream video
@@ -144,6 +176,15 @@ func (w *Webcam) SelectInput(index uint32) error {
 // GetInput queries the current video input.
 func (w *Webcam) GetInput() (int32, error) {
 	return getInput(w.fd)
+}
+
+// GetInputs queries the list of video inputs for the current device.
+func (w *Webcam) GetInputs() []Input {
+	inputs := []Input{}
+	for _, input := range enumInputs(w.fd) {
+		inputs = append(inputs, Input{input: input})
+	}
+	return inputs
 }
 
 // Returns supported frame sizes for a given image format

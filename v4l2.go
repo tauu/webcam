@@ -3,6 +3,7 @@ package webcam
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -87,6 +88,27 @@ const (
 	V4L2_CTRL_FLAG_NEXT_CTRL uint32 = 0x80000000
 )
 
+// Input Type
+const (
+	V4L2_INPUT_TYPE_TUNER  uint32 = 1
+	V4L2_INPUT_TYPE_CAMERA uint32 = 2
+	V4L2_INPUT_TYPE_TOUCH  uint32 = 3
+)
+
+// Input Status
+const (
+	V4L2_IN_ST_NO_POWER  uint32 = 0x00000001
+	V4L2_IN_ST_NO_SIGNAL uint32 = 0x00000002
+	V4L2_IN_ST_NO_COLOR  uint32 = 0x00000004
+)
+
+// Input Capabilities
+const (
+	V4L2_IN_CAP_DV_TIMINGS  uint32 = 0x00000002
+	V4L2_IN_CAP_STD         uint32 = 0x00000004
+	V4L2_IN_CAP_NATIVE_SIZE uint32 = 0x00000008
+)
+
 var (
 	VIDIOC_QUERYCAP  = ioctl.IoR(uintptr('V'), 0, unsafe.Sizeof(v4l2_capability{}))
 	VIDIOC_ENUM_FMT  = ioctl.IoRW(uintptr('V'), 2, unsafe.Sizeof(v4l2_fmtdesc{}))
@@ -98,6 +120,7 @@ var (
 	VIDIOC_DQBUF     = ioctl.IoRW(uintptr('V'), 17, unsafe.Sizeof(v4l2_buffer{}))
 	VIDIOC_G_PARM    = ioctl.IoRW(uintptr('V'), 21, unsafe.Sizeof(v4l2_streamparm{}))
 	VIDIOC_S_PARM    = ioctl.IoRW(uintptr('V'), 22, unsafe.Sizeof(v4l2_streamparm{}))
+	VIDIOC_ENUMINPUT = ioctl.IoRW(uintptr('V'), 26, unsafe.Sizeof(v4l2_input{}))
 	VIDIOC_G_CTRL    = ioctl.IoRW(uintptr('V'), 27, unsafe.Sizeof(v4l2_control{}))
 	VIDIOC_S_CTRL    = ioctl.IoRW(uintptr('V'), 28, unsafe.Sizeof(v4l2_control{}))
 	VIDIOC_QUERYCTRL = ioctl.IoRW(uintptr('V'), 36, unsafe.Sizeof(v4l2_queryctrl{}))
@@ -327,6 +350,20 @@ type v4l2_streamparm_union struct {
 type v4l2_streamparm struct {
 	_type uint32
 	union v4l2_streamparm_union
+}
+
+type v4l2_std_id uint64
+
+type v4l2_input struct {
+	Index        uint32
+	Name         [32]uint8
+	Type         uint32
+	Audioset     uint32
+	Tuner        uint32
+	Std          v4l2_std_id
+	Status       uint32
+	Capabilities uint32
+	reserved     [3]uint32
 }
 
 func checkCapabilities(fd uintptr) (supportsVideoCaptureSinglePlane bool, supportsVideoCaptureMultiPlane bool, supportsVideoStreaming bool, err error) {
@@ -805,6 +842,18 @@ func getInput(fd uintptr) (index int32, err error) {
 
 func selectInput(fd uintptr, index uint32) (err error) {
 	err = ioctl.Ioctl(fd, VIDIOC_S_INPUT, uintptr(unsafe.Pointer(&index)))
+	return
+}
+
+func enumInputs(fd uintptr) (inputs []v4l2_input) {
+	var err error
+	for index := uint32(0); err == nil; index++ {
+		input := v4l2_input{Index: index}
+		err = ioctl.Ioctl(fd, VIDIOC_ENUMINPUT, uintptr(unsafe.Pointer(&input)))
+		if err == nil {
+			inputs = append(inputs, input)
+		}
+	}
 	return
 }
 
