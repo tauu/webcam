@@ -205,6 +205,32 @@ func (w *Webcam) SetImageFormat(f PixelFormat, width, height uint32) (PixelForma
 	}
 }
 
+// Get the currently set image format. For example, DV (Digital Video) devices
+// may derive the format from the DV timings detected on the input and not
+// support setting a specific format.
+func (w *Webcam) GetImageFormat() (PixelFormat, uint32, uint32, error) {
+	format, err := getImageFormat(w.fd)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	switch format._type {
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
+		pixelFormat, err := format.pix_format()
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		return PixelFormat(pixelFormat.Pixelformat), pixelFormat.Width, pixelFormat.Height, nil
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
+		pixelFormat, err := format.pix_format_mplane()
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		return PixelFormat(pixelFormat.Pixelformat), pixelFormat.Width, pixelFormat.Height, nil
+	default:
+		return 0, 0, 0, err
+	}
+}
+
 // Set the number of frames to be buffered.
 // Not allowed if streaming is already on.
 func (w *Webcam) SetBufferCount(count uint32) error {

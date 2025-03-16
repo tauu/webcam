@@ -90,6 +90,7 @@ const (
 var (
 	VIDIOC_QUERYCAP  = ioctl.IoR(uintptr('V'), 0, unsafe.Sizeof(v4l2_capability{}))
 	VIDIOC_ENUM_FMT  = ioctl.IoRW(uintptr('V'), 2, unsafe.Sizeof(v4l2_fmtdesc{}))
+	VIDIOC_G_FMT     = ioctl.IoRW(uintptr('V'), 4, unsafe.Sizeof(v4l2_format{}))
 	VIDIOC_S_FMT     = ioctl.IoRW(uintptr('V'), 5, unsafe.Sizeof(v4l2_format{}))
 	VIDIOC_REQBUFS   = ioctl.IoRW(uintptr('V'), 8, unsafe.Sizeof(v4l2_requestbuffers{}))
 	VIDIOC_QUERYBUF  = ioctl.IoRW(uintptr('V'), 9, unsafe.Sizeof(v4l2_buffer{}))
@@ -483,6 +484,11 @@ func getBusInfo(fd uintptr) (string, error) {
 	}
 
 	return CToGoString(caps.bus_info[:]), nil
+}
+
+func getImageFormat(fd uintptr) (format v4l2_format, err error) {
+	err = ioctl.Ioctl(fd, VIDIOC_G_FMT, uintptr(unsafe.Pointer(&format)))
+	return
 }
 
 func setImageFormat(fd uintptr, formatcode *uint32, width *uint32, height *uint32, multiPlane bool) (err error) {
