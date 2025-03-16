@@ -56,3 +56,18 @@ func (s FrameSize) GetString() string {
 		return fmt.Sprintf("[%d-%d;%d]x[%d-%d;%d]", s.MinWidth, s.MaxWidth, s.StepWidth, s.MinHeight, s.MaxHeight, s.StepHeight)
 	}
 }
+
+// PixelFormatFromFourCC returns the pixel format for a given four character code.
+func PixelFormatFromFourCC(a,b,c,d rune) PixelFormat {
+	return PixelFormat(a) | (PixelFormat(b) << 8) | (PixelFormat(c) << 16) | (PixelFormat(d) << 24)
+}
+// FourCC returns the four character code corresponding to the PixelFormat.
+func FourCC(f PixelFormat) string {
+	b := []byte{
+		byte(uint32(f)), 
+		byte(uint32(f >> 8)), 
+		byte(uint32(f >> 16)), 
+		byte(uint32(f >> 24)), 
+	}
+	return string(b)
+}
