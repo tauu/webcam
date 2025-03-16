@@ -81,6 +81,37 @@ const (
 	V4L2_CTRL_FLAG_NEXT_CTRL uint32 = 0x80000000
 )
 
+// Interlaced
+const (
+	V4L2_DV_PROGRESSIVE uint32 = 0
+	V4L2_DV_INTERLACED  uint32 = 1
+)
+
+// Polarities
+const (
+	V4L2_DV_VSYNC_POS_POL uint32 = 1
+	V4L2_DV_HSYNC_POS_POL uint32 = 2
+)
+
+// DV Flags
+const (
+	V4L2_DV_FL_REDUCED_BLANKING       uint32 = 1 << 0
+	V4L2_DV_FL_CAN_REDUCE_FPS         uint32 = 1 << 1
+	V4L2_DV_FL_REDUCED_FPS            uint32 = 1 << 2
+	V4L2_DV_FL_HALF_LINE              uint32 = 1 << 3
+	V4L2_DV_FL_IS_CE_VIDEO            uint32 = 1 << 4
+	V4L2_DV_FL_FIRST_FIELD_EXTRA_LINE uint32 = 1 << 5
+	V4L2_DV_FL_HAS_PICTURE_ASPECT     uint32 = 1 << 6
+	V4L2_DV_FL_HAS_CEA861_VIC         uint32 = 1 << 7
+	V4L2_DV_FL_HAS_HDMI_VIC           uint32 = 1 << 8
+	V4L2_DV_FL_CAN_DETECT_REDUCED_FPS uint32 = 1 << 9
+)
+
+// DV Timing Type
+const (
+	V4L2_DV_BT_656_1120 uint32 = 0
+)
+
 var (
 	VIDIOC_QUERYCAP  = ioctl.IoR(uintptr('V'), 0, unsafe.Sizeof(v4l2_capability{}))
 	VIDIOC_ENUM_FMT  = ioctl.IoRW(uintptr('V'), 2, unsafe.Sizeof(v4l2_fmtdesc{}))
@@ -101,6 +132,10 @@ var (
 	VIDIOC_S_INPUT             = ioctl.IoRW(uintptr('V'), 39, 4)
 	VIDIOC_ENUM_FRAMESIZES     = ioctl.IoRW(uintptr('V'), 74, unsafe.Sizeof(v4l2_frmsizeenum{}))
 	VIDIOC_ENUM_FRAMEINTERVALS = ioctl.IoRW(uintptr('V'), 75, unsafe.Sizeof(v4l2_frmivalenum{}))
+	VIDIOC_S_DV_TIMINGS        = ioctl.IoRW(uintptr('V'), 87, unsafe.Sizeof(v4l2_dv_timings{}))
+	VIDIOC_G_DV_TIMINGS        = ioctl.IoRW(uintptr('V'), 88, unsafe.Sizeof(v4l2_dv_timings{}))
+	VIDIOC_ENUM_DV_TIMINGS     = ioctl.IoRW(uintptr('V'), 98, unsafe.Sizeof(v4l2_enum_dv_timings{}))
+	VIDIOC_QUERY_DV_TIMINGS    = ioctl.IoR(uintptr('V'), 99, unsafe.Sizeof(v4l2_dv_timings{}))
 	__p                        = unsafe.Pointer(uintptr(0))
 	NativeByteOrder            = getNativeByteOrder()
 )
@@ -260,6 +295,41 @@ type v4l2_streamparm_union struct {
 type v4l2_streamparm struct {
 	_type uint32
 	union v4l2_streamparm_union
+}
+
+type v4l2_enum_dv_timings struct {
+	index    uint32
+	pad      uint32
+	reserved [2]uint32
+	timings  v4l2_dv_timings
+}
+
+type v4l2_dv_timings struct {
+	_type uint32
+	bt    v4l2_bt_timings
+}
+
+type v4l2_bt_timings struct {
+	width          uint32
+	height         uint32
+	interlaced     uint32
+	polarities     uint32
+	pixelclock     uint64
+	hfrontporch    uint32
+	hsync          uint32
+	hbackporch     uint32
+	vfrontporch    uint32
+	vsync          uint32
+	vbackporch     uint32
+	il_vfrontporch uint32
+	il_vsync       uint32
+	il_vbackporch  uint32
+	standards      uint32
+	flags          uint32
+	picture_aspect v4l2_fract
+	cea861_vic     uint8
+	hdmi_vic       uint8
+	reserved       [46]uint8
 }
 
 func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStreaming bool, err error) {
@@ -590,6 +660,35 @@ func getInput(fd uintptr) (index int32, err error) {
 func selectInput(fd uintptr, index uint32) (err error) {
 	err = ioctl.Ioctl(fd, VIDIOC_S_INPUT, uintptr(unsafe.Pointer(&index)))
 	return
+}
+
+func getDigitalVideoTimings(fd uintptr) (v4l2_dv_timings, error) {
+	timings := v4l2_dv_timings{}
+	err := ioctl.Ioctl(fd, VIDIOC_G_DV_TIMINGS, uintptr(unsafe.Pointer(&timings)))
+	return timings, err
+}
+
+func setDigitalVideoTimings(fd uintptr, timings v4l2_dv_timings) error {
+	err := ioctl.Ioctl(fd, VIDIOC_S_DV_TIMINGS, uintptr(unsafe.Pointer(&timings)))
+	return err
+}
+
+func enumDigitalVideoTimings(fd uintptr) (all []v4l2_enum_dv_timings) {
+	var err error
+	for index := uint32(0); err == nil; index++ {
+		timings := v4l2_enum_dv_timings{index: index}
+		err = ioctl.Ioctl(fd, VIDIOC_ENUM_DV_TIMINGS, uintptr(unsafe.Pointer(&timings)))
+		if err == nil {
+			all = append(all, timings)
+		}
+	}
+	return
+}
+
+func queryDigitalVideoTimings(fd uintptr) (v4l2_dv_timings, error) {
+	timings := v4l2_dv_timings{}
+	err := ioctl.Ioctl(fd, VIDIOC_QUERY_DV_TIMINGS, uintptr(unsafe.Pointer(&timings)))
+	return timings, err
 }
 
 func getFramerate(fd uintptr) (float32, error) {
