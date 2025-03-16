@@ -68,6 +68,18 @@ func (i Input) SupportsDigitalVideoTinings() bool {
 	return i.input.Capabilities&V4L2_IN_CAP_DV_TIMINGS != 0
 }
 
+type DigitalVideoTimings struct {
+	timings v4l2_dv_timings
+}
+
+func (dvt DigitalVideoTimings) Width() uint32 {
+	return dvt.timings.bt.width
+}
+
+func (dvt DigitalVideoTimings) Height() uint32 {
+	return dvt.timings.bt.height
+}
+
 // Open a webcam with a given path
 // Checks if device is a v4l2 device and if it is
 // capable to stream video
@@ -270,6 +282,20 @@ func (w *Webcam) GetImageFormat() (PixelFormat, uint32, uint32, error) {
 	default:
 		return 0, 0, 0, err
 	}
+}
+
+// Retrieve the currently detected DV timings and set them to use for capturing.
+// If video is captured from a DV input this has to be done before capturing and
+// also every time the input source changes. After updating the timings, the
+// image format is automatically updated and the format can be corresponding
+// format can be received using GetImageFormat .
+func (w *Webcam) UpdateDigitalVideoTimings() error {
+	timings, err := queryDigitalVideoTimings(w.fd)
+	if err != nil {
+		return err
+	}
+	err = setDigitalVideoTimings(w.fd, timings)
+	return err
 }
 
 // Set the number of frames to be buffered.
