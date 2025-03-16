@@ -57,6 +57,12 @@ func (i Input) NoSignal() bool {
 	return i.input.Status&V4L2_IN_ST_NO_SIGNAL != 0
 }
 
+// If true the input support digital video timings, which likely also means that
+// it does not support setting framesizes and capture rates.
+func (i Input) SupportsDigitalVideoTinings() bool {
+	return i.input.Capabilities&V4L2_IN_CAP_DV_TIMINGS != 0
+}
+
 // Open a webcam with a given path
 // Checks if device is a v4l2 device and if it is
 // capable to stream video
