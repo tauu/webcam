@@ -486,7 +486,12 @@ func getBusInfo(fd uintptr) (string, error) {
 	return CToGoString(caps.bus_info[:]), nil
 }
 
-func getImageFormat(fd uintptr) (format v4l2_format, err error) {
+func getImageFormat(fd uintptr, multiPlane bool) (format v4l2_format, err error) {
+	if multiPlane {
+		format._type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+	} else {
+		format._type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+	}
 	err = ioctl.Ioctl(fd, VIDIOC_G_FMT, uintptr(unsafe.Pointer(&format)))
 	return
 }
