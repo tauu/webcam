@@ -267,6 +267,11 @@ func (w *Webcam) CanCaptureMultiPlane() bool {
 	return w.multiPlaneCapture
 }
 
+// True if multi plane capturing is used.
+func (w *Webcam) IsMutliPlaneCapturing() bool {
+	return w.useMultiPlane
+}
+
 // Get a map of available controls.
 func (w *Webcam) GetControls() map[ControlID]Control {
 	cmap := make(map[ControlID]Control)
