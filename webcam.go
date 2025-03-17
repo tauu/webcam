@@ -262,7 +262,7 @@ func (w *Webcam) SetImageFormat(f PixelFormat, width, height uint32) (PixelForma
 // may derive the format from the DV timings detected on the input and not
 // support setting a specific format.
 func (w *Webcam) GetImageFormat() (PixelFormat, uint32, uint32, error) {
-	format, err := getImageFormat(w.fd)
+	format, err := getImageFormat(w.fd, w.useMultiPlane)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -384,7 +384,7 @@ func (w *Webcam) StartStreaming() error {
 	if w.useMultiPlane {
 		// The number of planes of the current capture format is required
 		// for initializing the buffers.
-		format, err := getImageFormat(w.fd)
+		format, err := getImageFormat(w.fd, true)
 
 		if err != nil {
 			return errors.New("Failed to retrieve the current capture format: " + err.Error())
