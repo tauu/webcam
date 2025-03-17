@@ -321,15 +321,15 @@ type v4l2_buffer struct {
 	reserved  uint32
 }
 
-func (b *v4l2_buffer) initPlanes(numPlanes uint32) ([]v4l2_plane, error) {
+func (b *v4l2_buffer) initPlanes(numPlanes uint32) []v4l2_plane {
 	// Initialize a planes array and write a pointer to it into the union.
 	b.length = numPlanes
 	planes := make([]v4l2_plane, numPlanes)
 	planesPointer := uintptr(unsafe.Pointer(&planes[0]))
-	buf := bytes.NewBuffer(b.union[:])
-	err := binary.Write(buf, NativeByteOrder, planesPointer)
+	pointerBytes := *(*[unsafe.Sizeof(planesPointer)]byte)(unsafe.Pointer(&planesPointer))
+	copy(b.union[:], pointerBytes[:])
 
-	return planes, err
+	return planes
 }
 
 type v4l2_plane struct {
@@ -726,11 +726,7 @@ func mmapQueryBufferMultiPlane(fd uintptr, index uint32, numPlanes uint32) (buff
 	req._type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
 	req.memory = V4L2_MEMORY_MMAP
 	req.index = index
-	var planes []v4l2_plane
-	planes, err = req.initPlanes(numPlanes)
-	if err != nil {
-		return
-	}
+	planes := req.initPlanes(numPlanes)
 
 	err = ioctl.Ioctl(fd, VIDIOC_QUERYBUF, uintptr(unsafe.Pointer(req)))
 
@@ -786,13 +782,9 @@ func mmapDequeueBufferMultiPlane(fd uintptr, index *uint32, numPlanes uint32) ([
 	buffer.memory = V4L2_MEMORY_MMAP
 	// Initialize an array that will hold the number of bytes used in each plane.
 	lengths := make([]uint32, numPlanes)
+	planes := buffer.initPlanes(numPlanes)
 
-	planes, err := buffer.initPlanes(numPlanes)
-	if err != nil {
-		return lengths, err
-	}
-
-	err = ioctl.Ioctl(fd, VIDIOC_DQBUF, uintptr(unsafe.Pointer(buffer)))
+	err := ioctl.Ioctl(fd, VIDIOC_DQBUF, uintptr(unsafe.Pointer(buffer)))
 
 	if err != nil {
 		return lengths, err
@@ -830,13 +822,9 @@ func mmapEnqueueBufferMultiPlane(fd uintptr, index uint32, numPlanes uint32) ([]
 
 	// Initialize an array that will hold the number of bytes used in each plane.
 	lengths := make([]uint32, numPlanes)
+	planes := buffer.initPlanes(numPlanes)
 
-	planes, err := buffer.initPlanes(numPlanes)
-	if err != nil {
-		return lengths, err
-	}
-
-	err = ioctl.Ioctl(fd, VIDIOC_QBUF, uintptr(unsafe.Pointer(buffer)))
+	err := ioctl.Ioctl(fd, VIDIOC_QBUF, uintptr(unsafe.Pointer(buffer)))
 
 	if err != nil {
 		return lengths, err
