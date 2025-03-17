@@ -530,10 +530,21 @@ func (w *Webcam) StopStreaming() error {
 		return errors.New("Request to stop streaming when not streaming")
 	}
 	w.streaming = false
-	for _, buffer := range w.buffers {
-		err := mmapReleaseBuffer(buffer)
-		if err != nil {
-			return err
+	if w.useMultiPlane {
+		for _, buffer := range w.multiPlaneBuffers {
+			for _, plane := range buffer {
+				err := mmapReleaseBuffer(plane)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	} else {
+		for _, buffer := range w.buffers {
+			err := mmapReleaseBuffer(buffer)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return stopStreaming(w.fd, w.useMultiPlane)
