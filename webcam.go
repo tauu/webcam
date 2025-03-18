@@ -273,6 +273,42 @@ func (w *Webcam) UpdateDigitalVideoTimings() (DigitalVideoTimings, error) {
 	}
 	return digitalVideoTimings, err
 }
+
+func (w *Webcam) GetDigitalVideoTimings() (DigitalVideoTimings, error) {
+	var digitalVideoTimings DigitalVideoTimings
+	timings, err := getDigitalVideoTimings(w.fd)
+	digitalVideoTimings.timings = timings
+	if err != nil {
+		return digitalVideoTimings, err
+	}
+	btTimings, err := timings.v4l2_bt_timings()
+	digitalVideoTimings.btTimings = btTimings
+	if err != nil {
+		return digitalVideoTimings, err
+	}
+	return digitalVideoTimings, nil
+}
+
+func (w *Webcam) SetDigitalVideoTimings(timings DigitalVideoTimings) error {
+	return setDigitalVideoTimings(w.fd, timings.timings)
+}
+
+// SupportedDigitalVideoTimings retrieves a list of all DV timings supported by
+// the current input.
+func (w *Webcam) SupportedDigitalVideoTimings() ([]DigitalVideoTimings, error) {
+	supportedTimings := enumDigitalVideoTimings(w.fd)
+	digitalVideoTimings := []DigitalVideoTimings{}
+	for i, timings := range supportedTimings {
+		btTimigns, err := timings.timings.v4l2_bt_timings()
+		if err != nil {
+			return digitalVideoTimings, fmt.Errorf("Parsing timings %d failed %v", i, err)
+		}
+		digitalVideoTimings = append(digitalVideoTimings, DigitalVideoTimings{
+			timings:   timings.timings,
+			btTimings: btTimigns,
+		})
+	}
+	return digitalVideoTimings, nil
 }
 
 // Set the number of frames to be buffered.
