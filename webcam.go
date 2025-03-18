@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -36,6 +37,34 @@ type DigitalVideoTimings struct {
 	btTimings v4l2_bt_timings
 }
 
+type DVStandards struct {
+	CEA861 bool
+	DMT    bool
+	CVT    bool
+	GTF    bool
+	SDI    bool
+}
+
+func (s DVStandards) String() string {
+	names := []string{}
+	if s.CEA861 {
+		names = append(names, "CEA681")
+	}
+	if s.DMT {
+		names = append(names, "DMT")
+	}
+	if s.CVT {
+		names = append(names, "CVT")
+	}
+	if s.GTF {
+		names = append(names, "GTF")
+	}
+	if s.SDI {
+		names = append(names, "SDI")
+	}
+	return strings.Join(names, " ")
+}
+
 func (dvt DigitalVideoTimings) Width() uint32 {
 	return dvt.btTimings.Width
 }
@@ -59,6 +88,16 @@ func (dvt DigitalVideoTimings) RefreshRate() float64 {
 
 func (dvt DigitalVideoTimings) Interlaced() bool {
 	return dvt.btTimings.Interlaced&V4L2_DV_INTERLACED != 0
+}
+
+func (dvt DigitalVideoTimings) Standards() DVStandards {
+	return DVStandards{
+		CEA861: dvt.btTimings.Standards&V4L2_DV_BT_STD_CEA861 != 0,
+		DMT:    dvt.btTimings.Standards&V4L2_DV_BT_STD_DMT != 0,
+		CVT:    dvt.btTimings.Standards&V4L2_DV_BT_STD_CVT != 0,
+		SDI:    dvt.btTimings.Standards&V4L2_DV_BT_STD_SDI != 0,
+		GTF:    dvt.btTimings.Standards&V4L2_DV_BT_STD_GTF != 0,
+	}
 }
 
 // Open a webcam with a given path
