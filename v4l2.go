@@ -135,6 +135,15 @@ const (
 	V4L2_DV_FL_CAN_DETECT_REDUCED_FPS uint32 = 1 << 9
 )
 
+// DV Standards
+const (
+	V4L2_DV_BT_STD_CEA861 uint32 = 1 << 0
+	V4L2_DV_BT_STD_DMT    uint32 = 1 << 1
+	V4L2_DV_BT_STD_CVT    uint32 = 1 << 2
+	V4L2_DV_BT_STD_GTF    uint32 = 1 << 3
+	V4L2_DV_BT_STD_SDI    uint32 = 1 << 4
+)
+
 // DV Timing Type
 const (
 	V4L2_DV_BT_656_1120 uint32 = 0
