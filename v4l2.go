@@ -3,6 +3,7 @@ package webcam
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -329,21 +330,9 @@ type v4l2_streamparm struct {
 	union v4l2_streamparm_union
 }
 
-func checkCapabilities(fd uintptr) (supportsVideoCaptureSinglePlane bool, supportsVideoCaptureMultiPlane bool, supportsVideoStreaming bool, err error) {
-
-	caps := &v4l2_capability{}
-
-	err = ioctl.Ioctl(fd, VIDIOC_QUERYCAP, uintptr(unsafe.Pointer(caps)))
-
-	if err != nil {
-		return
-	}
-
-	supportsVideoCaptureSinglePlane = (caps.capabilities & V4L2_CAP_VIDEO_CAPTURE) != 0
-	supportsVideoCaptureMultiPlane = (caps.capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE) != 0
-	supportsVideoStreaming = (caps.capabilities & V4L2_CAP_STREAMING) != 0
+func getCapability(fd uintptr) (caps v4l2_capability, err error) {
+	err = ioctl.Ioctl(fd, VIDIOC_QUERYCAP, uintptr(unsafe.Pointer(&caps)))
 	return
-
 }
 
 func getPixelFormat(fd uintptr, index uint32, mplane bool) (code uint32, description string, err error) {
