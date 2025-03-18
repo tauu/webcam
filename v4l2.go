@@ -81,6 +81,12 @@ const (
 	V4L2_CTRL_FLAG_NEXT_CTRL uint32 = 0x80000000
 )
 
+// EDID sizes
+const (
+	EDID_NUM_BLOCKS_MAX uint32 = 256
+	EDID_BLOCK_SIZE     uint32 = 128
+)
+
 var (
 	VIDIOC_QUERYCAP  = ioctl.IoR(uintptr('V'), 0, unsafe.Sizeof(v4l2_capability{}))
 	VIDIOC_ENUM_FMT  = ioctl.IoRW(uintptr('V'), 2, unsafe.Sizeof(v4l2_fmtdesc{}))
@@ -94,6 +100,8 @@ var (
 	VIDIOC_G_CTRL    = ioctl.IoRW(uintptr('V'), 27, unsafe.Sizeof(v4l2_control{}))
 	VIDIOC_S_CTRL    = ioctl.IoRW(uintptr('V'), 28, unsafe.Sizeof(v4l2_control{}))
 	VIDIOC_QUERYCTRL = ioctl.IoRW(uintptr('V'), 36, unsafe.Sizeof(v4l2_queryctrl{}))
+	VIDIOC_G_EDID    = ioctl.IoRW(uintptr('V'), 40, unsafe.Sizeof(v4l2_edid{}))
+	VIDIOC_S_EDID    = ioctl.IoRW(uintptr('V'), 41, unsafe.Sizeof(v4l2_edid{}))
 	//sizeof int32
 	VIDIOC_STREAMON            = ioctl.IoW(uintptr('V'), 18, 4)
 	VIDIOC_STREAMOFF           = ioctl.IoW(uintptr('V'), 19, 4)
@@ -260,6 +268,14 @@ type v4l2_streamparm_union struct {
 type v4l2_streamparm struct {
 	_type uint32
 	union v4l2_streamparm_union
+}
+
+type v4l2_edid struct {
+	pad         uint32
+	start_block uint32
+	blocks      uint32
+	reserved    [5]uint32
+	edid        [unsafe.Sizeof(__p)]byte
 }
 
 func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStreaming bool, err error) {
@@ -650,6 +666,50 @@ func queryControls(fd uintptr) []control {
 		}
 	}
 	return controls
+}
+
+// getEdid retrieves the edid data of the input with the given index. The index
+// of a device is reported by enumInputs.
+func getEdid(fd uintptr, index uint32) ([]byte, error) {
+	edid := v4l2_edid{
+		pad:         index,
+		start_block: 0,
+		blocks:      EDID_NUM_BLOCKS_MAX,
+	}
+
+	// Create and set array to hold the edid data. The maximum possible size of
+	// and edid ist used to ensure the whole edid is returned.
+	var edidData [EDID_NUM_BLOCKS_MAX * EDID_BLOCK_SIZE]byte
+	edidPointer := uintptr(unsafe.Pointer(&edidData[0]))
+	pointerBytes := *(*[unsafe.Sizeof(edidPointer)]byte)(unsafe.Pointer(&edidPointer))
+	copy(edid.edid[:], pointerBytes[:])
+
+	err := ioctl.Ioctl(fd, VIDIOC_G_EDID, uintptr(unsafe.Pointer(&edid)))
+	if err != nil {
+		return edidData[:0], nil
+	}
+
+	// The drive should set the number of block actually used by the edid.
+	return edidData[:edid.blocks*EDID_BLOCK_SIZE], nil
+}
+
+// setEdid updates the edid data of the input with the given index. The index
+// of a device is reported by enumInputs.
+func setEdid(fd uintptr, index uint32, data []byte) error {
+	edid := v4l2_edid{
+		pad:         index,
+		start_block: 0,
+		blocks:      uint32(len(data) / int(EDID_BLOCK_SIZE)),
+	}
+
+	// Create and set array to hold the edid data. The maximum possible size of
+	// and edid ist used to ensure the whole edid is returned.
+	edidPointer := uintptr(unsafe.Pointer(&data[0]))
+	pointerBytes := *(*[unsafe.Sizeof(edidPointer)]byte)(unsafe.Pointer(&edidPointer))
+	copy(edid.edid[:], pointerBytes[:])
+
+	err := ioctl.Ioctl(fd, VIDIOC_G_EDID, uintptr(unsafe.Pointer(&edid)))
+	return err
 }
 
 func getNativeByteOrder() binary.ByteOrder {
