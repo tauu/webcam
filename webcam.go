@@ -579,6 +579,18 @@ func (w *Webcam) SetAutoWhiteBalance(val bool) error {
 	return setControl(w.fd, V4L2_CID_AUTO_WHITE_BALANCE, v)
 }
 
+// GetEDID retrieves the EDID data for the device with the given index as
+// as reported by GetDevices.
+func (w *Webcam) GetEDID(index uint32) ([]byte, error) {
+	return getEdid(w.fd, index)
+}
+
+// SetEDID updates the EDID data of the device with the given index as
+// as reported by GetDevices.
+func (w *Webcam) SetEDID(index uint32, data []byte) error {
+	return setEdid(w.fd, index, data)
+}
+
 func gobytes(p unsafe.Pointer, n int) []byte {
 
 	h := reflect.SliceHeader{uintptr(p), n, n}
