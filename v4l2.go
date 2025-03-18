@@ -557,15 +557,6 @@ func getFrameSize(fd uintptr, index uint32, code uint32) (frameSize FrameSize, e
 	return
 }
 
-func getName(fd uintptr) (string, error) {
-	var caps v4l2_capability
-	if err := ioctl.Ioctl(fd, VIDIOC_QUERYCAP, uintptr(unsafe.Pointer(&caps))); err != nil {
-		return "", err
-	}
-
-	return CToGoString(caps.card[:]), nil
-}
-
 func getFrameInterval(fd uintptr, index uint32, code uint32, width uint32, height uint32) (FrameRate, error) {
 	frmivalEnum := &v4l2_frmivalenum{
 		index:        index,
@@ -613,15 +604,6 @@ func getFrameInterval(fd uintptr, index uint32, code uint32, width uint32, heigh
 	}
 
 	return FrameRate{}, fmt.Errorf("unknown frame interval type")
-}
-
-func getBusInfo(fd uintptr) (string, error) {
-	var caps v4l2_capability
-	if err := ioctl.Ioctl(fd, VIDIOC_QUERYCAP, uintptr(unsafe.Pointer(&caps))); err != nil {
-		return "", err
-	}
-
-	return CToGoString(caps.bus_info[:]), nil
 }
 
 func getImageFormat(fd uintptr, multiPlane bool) (format v4l2_format, err error) {
