@@ -37,6 +37,7 @@ type control struct {
 const (
 	V4L2_CAP_VIDEO_CAPTURE             uint32 = 0x00000001
 	V4L2_CAP_VIDEO_CAPTURE_MPLANE      uint32 = 0x00001000
+	V4L2_CAP_EDID                      uint32 = 0x02000000
 	V4L2_CAP_STREAMING                 uint32 = 0x04000000
 	V4L2_BUF_TYPE_VIDEO_CAPTURE        uint32 = 1
 	V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE uint32 = 9

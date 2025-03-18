@@ -584,6 +584,11 @@ func (w *Webcam) SetAutoWhiteBalance(val bool) error {
 	return setControl(w.fd, V4L2_CID_AUTO_WHITE_BALANCE, v)
 }
 
+// HasEDID yields true if the device can store EDID information for an input.
+func (w *Webcam) HasEDID() bool {
+	return w.capability.capabilities&V4L2_CAP_EDID != 0
+}
+
 // GetEDID retrieves the EDID data for the device with the given index as
 // as reported by GetDevices.
 func (w *Webcam) GetEDID(index uint32) ([]byte, error) {
