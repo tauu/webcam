@@ -42,7 +42,23 @@ func (dvt DigitalVideoTimings) Width() uint32 {
 
 func (dvt DigitalVideoTimings) Height() uint32 {
 	return dvt.btTimings.Height
-	return dvt.timings.bt.height
+}
+
+func (dvt DigitalVideoTimings) RefreshRate() float64 {
+	width := dvt.btTimings.Width +
+		dvt.btTimings.Hfrontporch +
+		dvt.btTimings.Hbackporch +
+		dvt.btTimings.Hsync
+	height := dvt.btTimings.Height +
+		dvt.btTimings.Vfrontporch +
+		dvt.btTimings.Vbackporch +
+		dvt.btTimings.Vsync
+	return float64(dvt.btTimings.Pixelclock) /
+		float64(width) / float64(height)
+}
+
+func (dvt DigitalVideoTimings) Interlaced() bool {
+	return dvt.btTimings.Interlaced&V4L2_DV_INTERLACED != 0
 }
 
 // Open a webcam with a given path
