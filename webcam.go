@@ -20,6 +20,7 @@ type Webcam struct {
 	multiPlaneBuffers  [][][]byte
 	streaming          bool
 	pollFds            []unix.PollFd
+	capability         v4l2_capability
 	singlePlaneCapture bool
 	multiPlaneCapture  bool
 	useMultiPlane      bool
@@ -57,28 +58,32 @@ func Open(path string) (*Webcam, error) {
 	}()
 	fd := uintptr(handle)
 
-	supportsVideoCaptureSinglePlane, supportsVideoCaptureMultiPlane, supportsVideoStreaming, err := checkCapabilities(fd)
+	capabilitiy, err := getCapability(fd)
 
 	if err != nil {
 		return nil, err
 	}
 
-	if !supportsVideoCaptureSinglePlane && !supportsVideoCaptureMultiPlane {
+	singlePlaneCapture := capabilitiy.capabilities&V4L2_CAP_VIDEO_CAPTURE != 0
+	multiPlaneCapture := capabilitiy.capabilities&V4L2_CAP_VIDEO_CAPTURE_MPLANE != 0
+
+	if !singlePlaneCapture && !multiPlaneCapture {
 		return nil, errors.New("Not a video capture device")
 	}
 
-	if !supportsVideoStreaming {
+	if capabilitiy.capabilities&V4L2_CAP_STREAMING == 0 {
 		return nil, errors.New("Device does not support the streaming I/O method")
 	}
 
 	w := new(Webcam)
 	w.fd = fd
-	w.singlePlaneCapture = supportsVideoCaptureSinglePlane
-	w.multiPlaneCapture = supportsVideoCaptureMultiPlane
 	w.bufcount = 256
 	w.pollFds = []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+	w.capability = capabilitiy
 	// Choose singe plane api by default if available.
-	if supportsVideoCaptureSinglePlane {
+	w.singlePlaneCapture = singlePlaneCapture
+	w.multiPlaneCapture = multiPlaneCapture
+	if singlePlaneCapture {
 		w.useMultiPlane = false
 	} else {
 		w.useMultiPlane = true
