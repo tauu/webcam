@@ -141,6 +141,18 @@ func (w *Webcam) GetBusInfo() (string, error) {
 	return CToGoString(w.capability.bus_info[:]), nil
 }
 
+// GetDriver returns the driver name of the device
+func (w *Webcam) GetDriver() string {
+	return CToGoString(w.capability.driver[:])
+}
+
+// GetVersion returns the version of the driver
+func (w *Webcam) GetVersion() string {
+	v := w.capability.version
+	major, minor, patch := v>>16, v>>8&0xff, v&0xff
+	return fmt.Sprintf("v%d.%d.%d", major, minor, patch)
+}
+
 // SelectInput selects the current video input.
 func (w *Webcam) SelectInput(index uint32) error {
 	return selectInput(w.fd, index)
