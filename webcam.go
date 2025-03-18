@@ -69,14 +69,16 @@ func (i Input) SupportsDigitalVideoTinings() bool {
 }
 
 type DigitalVideoTimings struct {
-	timings v4l2_dv_timings
+	timings   v4l2_dv_timings
+	btTimings v4l2_bt_timings
 }
 
 func (dvt DigitalVideoTimings) Width() uint32 {
-	return dvt.timings.bt.width
+	return dvt.btTimings.Width
 }
 
 func (dvt DigitalVideoTimings) Height() uint32 {
+	return dvt.btTimings.Height
 	return dvt.timings.bt.height
 }
 
@@ -289,13 +291,25 @@ func (w *Webcam) GetImageFormat() (PixelFormat, uint32, uint32, error) {
 // also every time the input source changes. After updating the timings, the
 // image format is automatically updated and the format can be corresponding
 // format can be received using GetImageFormat .
-func (w *Webcam) UpdateDigitalVideoTimings() error {
+func (w *Webcam) UpdateDigitalVideoTimings() (DigitalVideoTimings, error) {
+	digitalVideoTimings := DigitalVideoTimings{}
 	timings, err := queryDigitalVideoTimings(w.fd)
+	digitalVideoTimings.timings = timings
 	if err != nil {
-		return err
+		return digitalVideoTimings, err
+	}
+	// Parse current bt timings.
+	btTimings, err := timings.v4l2_bt_timings()
+	digitalVideoTimings.btTimings = btTimings
+	if err != nil {
+		return digitalVideoTimings, err
 	}
 	err = setDigitalVideoTimings(w.fd, timings)
-	return err
+	if err != nil {
+		return digitalVideoTimings, err
+	}
+	return digitalVideoTimings, err
+}
 }
 
 // Set the number of frames to be buffered.

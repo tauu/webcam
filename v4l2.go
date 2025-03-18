@@ -410,30 +410,48 @@ type v4l2_enum_dv_timings struct {
 
 type v4l2_dv_timings struct {
 	_type uint32
-	bt    v4l2_bt_timings
+	union [32 * 4]uint8
+	// Currently (2025-03-17) the union can only containg the v4l2_bt_timings
+	// structure, but this structure is one uint32 smaller than the union.
+	// Therefore embedding the structure intead of the union would break the
+	// ioctl call as the full size of v4l2_dv_timings does not match the
+	// expected size. To handle this in a future proof way, the union is
+	// represented as the byte array and afterwards written to the
+	// v4l2_bt_timings structure.
+	//bt    v4l2_bt_timings
+}
+
+func (timings v4l2_dv_timings) v4l2_bt_timings() (v4l2_bt_timings, error) {
+	btTimings := v4l2_bt_timings{}
+	if timings._type != V4L2_DV_BT_656_1120 {
+		return btTimings, fmt.Errorf("the type of the timings %d not supported, currently only not V4L2_DV_BT_656_1120 is supported", timings._type)
+	}
+	buf := bytes.NewBuffer(timings.union[:])
+	err := binary.Read(buf, NativeByteOrder, &btTimings)
+	return btTimings, err
 }
 
 type v4l2_bt_timings struct {
-	width          uint32
-	height         uint32
-	interlaced     uint32
-	polarities     uint32
-	pixelclock     uint64
-	hfrontporch    uint32
-	hsync          uint32
-	hbackporch     uint32
-	vfrontporch    uint32
-	vsync          uint32
-	vbackporch     uint32
-	il_vfrontporch uint32
-	il_vsync       uint32
-	il_vbackporch  uint32
-	standards      uint32
-	flags          uint32
-	picture_aspect v4l2_fract
-	cea861_vic     uint8
-	hdmi_vic       uint8
-	reserved       [46]uint8
+	Width          uint32
+	Height         uint32
+	Interlaced     uint32
+	Polarities     uint32
+	Pixelclock     uint64
+	Hfrontporch    uint32
+	Hsync          uint32
+	Hbackporch     uint32
+	Vfrontporch    uint32
+	Vsync          uint32
+	Vbackporch     uint32
+	Il_vfrontporch uint32
+	Il_vsync       uint32
+	Il_vbackporch  uint32
+	Standards      uint32
+	Flags          uint32
+	Picture_aspect v4l2_fract
+	Cea861_vic     uint8
+	Hdmi_vic       uint8
+	Reserved       [46]uint8
 }
 
 func checkCapabilities(fd uintptr) (supportsVideoCaptureSinglePlane bool, supportsVideoCaptureMultiPlane bool, supportsVideoStreaming bool, err error) {
