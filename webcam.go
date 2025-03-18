@@ -513,6 +513,11 @@ func (w *Webcam) SetAutoWhiteBalance(val bool) error {
 	return setControl(w.fd, V4L2_CID_AUTO_WHITE_BALANCE, v)
 }
 
+// HasEDID yields true if the device can store EDID information for an input.
+func (w *Webcam) HasEDID() bool {
+	return w.capability.capabilities&V4L2_CAP_EDID != 0
+}
+
 func gobytes(p unsafe.Pointer, n int) []byte {
 
 	h := reflect.SliceHeader{uintptr(p), n, n}
