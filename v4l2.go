@@ -708,7 +708,7 @@ func setEdid(fd uintptr, index uint32, data []byte) error {
 	pointerBytes := *(*[unsafe.Sizeof(edidPointer)]byte)(unsafe.Pointer(&edidPointer))
 	copy(edid.edid[:], pointerBytes[:])
 
-	err := ioctl.Ioctl(fd, VIDIOC_G_EDID, uintptr(unsafe.Pointer(&edid)))
+	err := ioctl.Ioctl(fd, VIDIOC_S_EDID, uintptr(unsafe.Pointer(&edid)))
 	return err
 }
 
