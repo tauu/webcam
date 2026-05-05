@@ -405,6 +405,29 @@ type v4l2_streamparm struct {
 	union v4l2_streamparm_union
 }
 
+type v4l2_edid struct {
+	pad         uint32
+	start_block uint32
+	blocks      uint32
+	reserved    [5]uint32
+	edid        [unsafe.Sizeof(__p)]byte
+}
+
+func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStreaming bool, err error) {
+
+	caps := &v4l2_capability{}
+
+	err = ioctl.Ioctl(fd, VIDIOC_QUERYCAP, uintptr(unsafe.Pointer(caps)))
+
+	if err != nil {
+		return
+	}
+
+	supportsVideoCapture = (caps.capabilities & V4L2_CAP_VIDEO_CAPTURE) != 0
+	supportsVideoStreaming = (caps.capabilities & V4L2_CAP_STREAMING) != 0
+	return
+}
+
 type v4l2_std_id uint64
 
 type v4l2_input struct {
@@ -734,7 +757,7 @@ func mmapQueryBuffer(fd uintptr, index uint32, length *uint32) (buffer []byte, e
 
 	*length = req.length
 
-	buffer, err = unix.Mmap(int(fd), int64(offset), int(req.length), unix.PROT_READ, unix.MAP_SHARED)
+	buffer, err = unix.Mmap(int(fd), int64(offset), int(req.length), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
 	return
 }
 
@@ -1063,7 +1086,7 @@ func setEdid(fd uintptr, index uint32, data []byte) error {
 	pointerBytes := *(*[unsafe.Sizeof(edidPointer)]byte)(unsafe.Pointer(&edidPointer))
 	copy(edid.edid[:], pointerBytes[:])
 
-	err := ioctl.Ioctl(fd, VIDIOC_G_EDID, uintptr(unsafe.Pointer(&edid)))
+	err := ioctl.Ioctl(fd, VIDIOC_S_EDID, uintptr(unsafe.Pointer(&edid)))
 	return err
 }
 
