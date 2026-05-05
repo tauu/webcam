@@ -405,14 +405,6 @@ type v4l2_streamparm struct {
 	union v4l2_streamparm_union
 }
 
-type v4l2_edid struct {
-	pad         uint32
-	start_block uint32
-	blocks      uint32
-	reserved    [5]uint32
-	edid        [unsafe.Sizeof(__p)]byte
-}
-
 func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStreaming bool, err error) {
 
 	caps := &v4l2_capability{}
