@@ -4,9 +4,11 @@
 package webcam
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -29,6 +31,36 @@ type Control struct {
 	Max  int32
 	Type int32
 	Step int32
+}
+
+type Event struct {
+	EventType uint32
+	Pending   uint32
+	Sequence  uint32
+	Timestamp time.Time
+	Id        uint32
+	data      [64]byte
+}
+
+type EventVsync struct {
+	Field byte
+}
+type EventCtrl struct {
+	Min  int32
+	Max  int32
+	Type int32
+	Step int32
+}
+type EventFrameSync struct {
+	FrameSequence uint32
+}
+type EventSrcChange struct {
+	Changes uint32
+}
+type EventMotionDetect struct {
+	Flags         uint32
+	FrameSequence uint32
+	RegionMask    uint32
 }
 
 // Open a webcam with a given path
@@ -351,6 +383,92 @@ func (w *Webcam) SetAutoWhiteBalance(val bool) error {
 		v = 1
 	}
 	return setControl(w.fd, V4L2_CID_AUTO_WHITE_BALANCE, v)
+}
+
+func (w *Webcam) SubscribeToEvent(eventType, id, flags uint32) error {
+	return subscribeToEvent(w.fd, eventType, id, flags)
+}
+
+func (w *Webcam) UnsubscribeFromEvent(eventType, id, flags uint32) error {
+	return unsubscribeFromEvent(w.fd, eventType, id, flags)
+}
+
+func (w *Webcam) WaitForNextEvent(timeout int) (*Event, error) {
+	fds := []unix.PollFd{
+		{
+			Fd:     int32(w.fd),
+			Events: unix.POLLPRI,
+		},
+	}
+	count, err := unix.Poll(fds, timeout)
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, new(Timeout)
+	}
+
+	event, err := dequeEvent(w.fd)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Event{
+		EventType: event._type,
+		Pending:   event.pending,
+		Sequence:  event.sequence,
+		Timestamp: time.Unix(event.timestamp.Sec, event.timestamp.Nsec),
+		Id:        event.id,
+		data:      event.union,
+	}, nil
+}
+
+func (e Event) VSync() (EventVsync, error) {
+	if e.EventType != V4L2_EVENT_VSYNC {
+		return EventVsync{}, &EventTypeError{Expected: V4L2_EVENT_VSYNC, Actual: e.EventType}
+	}
+	return EventVsync{Field: e.data[0]}, nil
+}
+
+func (e Event) Ctrl() (EventCtrl, error) {
+	if e.EventType != V4L2_EVENT_CTRL {
+		return EventCtrl{}, &EventTypeError{Expected: V4L2_EVENT_CTRL, Actual: e.EventType}
+	}
+	return EventCtrl{
+		Type: int32(binary.NativeEndian.Uint32(e.data[4:8])),
+		Min:  int32(binary.NativeEndian.Uint32(e.data[16:20])),
+		Max:  int32(binary.NativeEndian.Uint32(e.data[20:24])),
+		Step: int32(binary.NativeEndian.Uint32(e.data[24:28])),
+	}, nil
+}
+
+func (e Event) FrameSync() (EventFrameSync, error) {
+	if e.EventType != V4L2_EVENT_CTRL {
+		return EventFrameSync{}, &EventTypeError{Expected: V4L2_EVENT_FRAME_SYNC, Actual: e.EventType}
+	}
+	return EventFrameSync{
+		FrameSequence: binary.NativeEndian.Uint32(e.data[0:4]),
+	}, nil
+}
+
+func (e Event) SrcChange() (EventSrcChange, error) {
+	if e.EventType != V4L2_EVENT_CTRL {
+		return EventSrcChange{}, &EventTypeError{Expected: V4L2_EVENT_SOURCE_CHANGE, Actual: e.EventType}
+	}
+	return EventSrcChange{
+		Changes: binary.NativeEndian.Uint32(e.data[0:4]),
+	}, nil
+}
+
+func (e Event) EventMotionDetect() (EventMotionDetect, error) {
+	if e.EventType != V4L2_EVENT_CTRL {
+		return EventMotionDetect{}, &EventTypeError{Expected: V4L2_EVENT_MOTION_DET, Actual: e.EventType}
+	}
+	return EventMotionDetect{
+		Flags:         binary.NativeEndian.Uint32(e.data[0:4]),
+		FrameSequence: binary.NativeEndian.Uint32(e.data[4:8]),
+		RegionMask:    binary.NativeEndian.Uint32(e.data[8:12]),
+	}, nil
 }
 
 func gobytes(p unsafe.Pointer, n int) []byte {
