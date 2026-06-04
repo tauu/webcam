@@ -180,12 +180,8 @@ func (w *Webcam) SetImageFormat(f PixelFormat, width, height uint32) (PixelForma
 	}
 }
 
-// Retrieve the currently detected DV timings and set them to use for capturing.
-// If video is captured from a DV input this has to be done before capturing and
-// also every time the input source changes. After updating the timings, the
-// image format is automatically updated and the format can be corresponding
-// format can be received using GetImageFormat .
-func (w *Webcam) UpdateDigitalVideoTimings() (DigitalVideoTimings, error) {
+// Retrieve the currently detected DV timings.
+func (w *Webcam) QueryDigitalVideoTimings() (DigitalVideoTimings, error) {
 	digitalVideoTimings := DigitalVideoTimings{}
 	timings, err := queryDigitalVideoTimings(w.fd)
 	digitalVideoTimings.timings = timings
@@ -195,13 +191,6 @@ func (w *Webcam) UpdateDigitalVideoTimings() (DigitalVideoTimings, error) {
 	// Parse current bt timings.
 	btTimings, err := timings.v4l2_bt_timings()
 	digitalVideoTimings.btTimings = btTimings
-	if err != nil {
-		return digitalVideoTimings, err
-	}
-	err = setDigitalVideoTimings(w.fd, timings)
-	if err != nil {
-		return digitalVideoTimings, err
-	}
 	return digitalVideoTimings, err
 }
 
