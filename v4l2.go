@@ -405,35 +405,6 @@ type v4l2_streamparm struct {
 	union v4l2_streamparm_union
 }
 
-func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStreaming bool, err error) {
-
-	caps := &v4l2_capability{}
-
-	err = ioctl.Ioctl(fd, VIDIOC_QUERYCAP, uintptr(unsafe.Pointer(caps)))
-
-	if err != nil {
-		return
-	}
-
-	supportsVideoCapture = (caps.capabilities & V4L2_CAP_VIDEO_CAPTURE) != 0
-	supportsVideoStreaming = (caps.capabilities & V4L2_CAP_STREAMING) != 0
-	return
-}
-
-type v4l2_std_id uint64
-
-type v4l2_input struct {
-	Index        uint32
-	Name         [32]uint8
-	Type         uint32
-	Audioset     uint32
-	Tuner        uint32
-	Std          v4l2_std_id
-	Status       uint32
-	Capabilities uint32
-	reserved     [3]uint32
-}
-
 type v4l2_enum_dv_timings struct {
 	index    uint32
 	pad      uint32
@@ -485,6 +456,35 @@ type v4l2_bt_timings struct {
 	Cea861_vic     uint8
 	Hdmi_vic       uint8
 	Reserved       [46]uint8
+}
+
+func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStreaming bool, err error) {
+
+	caps := &v4l2_capability{}
+
+	err = ioctl.Ioctl(fd, VIDIOC_QUERYCAP, uintptr(unsafe.Pointer(caps)))
+
+	if err != nil {
+		return
+	}
+
+	supportsVideoCapture = (caps.capabilities & V4L2_CAP_VIDEO_CAPTURE) != 0
+	supportsVideoStreaming = (caps.capabilities & V4L2_CAP_STREAMING) != 0
+	return
+}
+
+type v4l2_std_id uint64
+
+type v4l2_input struct {
+	Index        uint32
+	Name         [32]uint8
+	Type         uint32
+	Audioset     uint32
+	Tuner        uint32
+	Std          v4l2_std_id
+	Status       uint32
+	Capabilities uint32
+	reserved     [3]uint32
 }
 
 type v4l2_edid struct {
