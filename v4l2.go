@@ -156,6 +156,16 @@ const (
 	EDID_BLOCK_SIZE     uint32 = 128
 )
 
+const (
+	V4L2_EVENT_ALL           uint32 = 0
+	V4L2_EVENT_VSYNC         uint32 = 1
+	V4L2_EVENT_EOS           uint32 = 2
+	V4L2_EVENT_CTRL          uint32 = 3
+	V4L2_EVENT_FRAME_SYNC    uint32 = 4
+	V4L2_EVENT_SOURCE_CHANGE uint32 = 5
+	V4L2_EVENT_MOTION_DET    uint32 = 6
+)
+
 var (
 	VIDIOC_QUERYCAP  = ioctl.IoR(uintptr('V'), 0, unsafe.Sizeof(v4l2_capability{}))
 	VIDIOC_ENUM_FMT  = ioctl.IoRW(uintptr('V'), 2, unsafe.Sizeof(v4l2_fmtdesc{}))
@@ -184,6 +194,9 @@ var (
 	VIDIOC_G_DV_TIMINGS        = ioctl.IoRW(uintptr('V'), 88, unsafe.Sizeof(v4l2_dv_timings{}))
 	VIDIOC_ENUM_DV_TIMINGS     = ioctl.IoRW(uintptr('V'), 98, unsafe.Sizeof(v4l2_enum_dv_timings{}))
 	VIDIOC_QUERY_DV_TIMINGS    = ioctl.IoR(uintptr('V'), 99, unsafe.Sizeof(v4l2_dv_timings{}))
+	VIDIOC_DQEVENT             = ioctl.IoR(uintptr('V'), 89, unsafe.Sizeof(v4l2_event{}))
+	VIDIOC_SUBSCRIBE_EVENT     = ioctl.IoW(uintptr('V'), 90, unsafe.Sizeof(v4l2_event_subscription{}))
+	VIDIOC_UNSUBSCRIBE_EVENT   = ioctl.IoW(uintptr('V'), 91, unsafe.Sizeof(v4l2_event_subscription{}))
 	__p                        = unsafe.Pointer(uintptr(0))
 	NativeByteOrder            = getNativeByteOrder()
 )
@@ -456,6 +469,52 @@ type v4l2_bt_timings struct {
 	Cea861_vic     uint8
 	Hdmi_vic       uint8
 	Reserved       [46]uint8
+}
+
+type v4l2_event_subscription struct {
+	_type    uint32
+	id       uint32
+	flags    uint32
+	reserved [5]uint32
+}
+
+type v4l2_event struct {
+	_type     uint32
+	union     [64]byte
+	pending   uint32
+	sequence  uint32
+	timestamp unix.Timespec
+	id        uint32
+	reserved  [8]uint32
+}
+
+type v4l2_event_vsync struct {
+	field byte
+}
+
+type v4l2_event_ctrl struct {
+	changes       uint32
+	_type         uint32
+	union         [8]byte
+	flags         uint32
+	minimum       int32
+	maximum       int32
+	step          int32
+	default_value int32
+}
+
+type v4l2_event_frame_sync struct {
+	frame_sequence uint32
+}
+
+type v4l2_event_src_change struct {
+	changes uint32
+}
+
+type v4l2_event_motion_det struct {
+	flags          uint32
+	frame_sequence uint32
+	region_mask    uint32
 }
 
 func checkCapabilities(fd uintptr) (supportsVideoCapture bool, supportsVideoStreaming bool, err error) {
@@ -1080,6 +1139,28 @@ func setEdid(fd uintptr, index uint32, data []byte) error {
 
 	err := ioctl.Ioctl(fd, VIDIOC_S_EDID, uintptr(unsafe.Pointer(&edid)))
 	return err
+}
+
+func subscribeToEvent(fd uintptr, eventType, id, flags uint32) error {
+	sub := &v4l2_event_subscription{}
+	sub.id = id
+	sub._type = eventType
+	sub.flags = flags
+	return ioctl.Ioctl(fd, VIDIOC_SUBSCRIBE_EVENT, uintptr(unsafe.Pointer(sub)))
+}
+
+func unsubscribeFromEvent(fd uintptr, eventType, id, flags uint32) error {
+	sub := &v4l2_event_subscription{}
+	sub.id = id
+	sub._type = eventType
+	sub.flags = flags
+	return ioctl.Ioctl(fd, VIDIOC_UNSUBSCRIBE_EVENT, uintptr(unsafe.Pointer(sub)))
+}
+
+func dequeEvent(fd uintptr) (v4l2_event, error) {
+	event := &v4l2_event{}
+	err := ioctl.Ioctl(fd, VIDIOC_DQEVENT, uintptr(unsafe.Pointer(event)))
+	return *event, err
 }
 
 func getNativeByteOrder() binary.ByteOrder {
