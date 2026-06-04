@@ -505,6 +505,17 @@ func (w *Webcam) StopStreaming() error {
 	return stopStreaming(w.fd, w.useMultiPlane)
 }
 
+// Remove all buffers. Some drivers may requires this before the format and/or
+// resolution can be changed after capturing was stopped.
+func (w *Webcam) RemoveBuffers() error {
+	if w.streaming {
+		return errors.New("buffers cannot be removed while streaming")
+	}
+	// Change buffer count to 0.
+	count := uint32(0)
+	return mmapRequestBuffers(w.fd, &count, w.multiPlaneCapture)
+}
+
 // Close the device
 func (w *Webcam) Close() error {
 	if w.streaming {
